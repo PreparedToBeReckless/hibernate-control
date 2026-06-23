@@ -5,7 +5,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Configure hibernate here, then close this window. A background agent keeps your shortcut active.")
+            Text("Configure hibernate here, then close this window. The app stays in the menu bar and keeps your shortcut active.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -15,12 +15,12 @@ struct SettingsView: View {
                     .fill(store.backgroundAgentRunning ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
                 Text(store.backgroundAgentRunning
-                     ? "Menu bar agent is running"
-                     : "Menu bar agent is not running")
+                     ? "App is running in the menu bar"
+                     : "App is not running")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Restart Agent") {
+                Button("Restart App") {
                     store.restartBackgroundAgent()
                 }
             }
@@ -72,7 +72,7 @@ struct SettingsView: View {
                     store.showPowerSettingsInTerminal()
                 }
                 Spacer()
-                Button("Stop Background Agent") {
+                Button("Quit App") {
                     store.stopBackgroundAgent()
                 }
             }
@@ -85,7 +85,7 @@ struct SettingsView: View {
                 .disabled(!store.hibernateEnabled)
             }
 
-            Text("Stop the background agent before moving the app to Applications.")
+            Text("Quit the app before moving it to Applications.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

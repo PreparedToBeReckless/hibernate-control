@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 enum BackgroundAgentManager {
@@ -15,29 +16,44 @@ enum BackgroundAgentManager {
         Bundle.main.executableURL?.path
     }
 
-    static func isBackgroundRunning() -> Bool {
-        runPgrep(arguments: ["-f", "HibernateControl --background"])
-    }
-
-    static func ensureRunning() {
-        terminateBackgroundInstances()
-        guard let executable = executablePath() else { return }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["--background"]
-        process.standardOutput = nil
-        process.standardError = nil
-        do {
-            try process.run()
-        } catch {
-            NSLog("Hibernate Control: failed to spawn background agent: \(error)")
+    static func isAppRunning() -> Bool {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return false }
+        return NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == bundleID
         }
     }
 
-    static func stopBackgroundAgent() {
-        terminateBackgroundInstances()
+    static func isOtherInstanceRunning() -> Bool {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return false }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        return NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == bundleID && $0.processIdentifier != myPID
+        }
+    }
+
+    static func ensureRunning() {
+        guard !isAppRunning() else { return }
+        guard let appURL = Bundle.main.bundleURL as URL? else { return }
+
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = false
+        config.createsNewApplicationInstance = false
+        NSWorkspace.shared.openApplication(at: appURL, configuration: config, completionHandler: nil)
+    }
+
+    static func requestShowSettings() {
+        DistributedNotificationCenter.default().post(
+            name: showSettingsNotification,
+            object: nil
+        )
+    }
+
+    static func stopApp() {
         _ = runLaunchctl(["bootout", "gui/\(getuid())", launchAgentPlistURL.path])
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        for app in NSWorkspace.shared.runningApplications where app.bundleIdentifier == bundleID {
+            app.terminate()
+        }
     }
 
     static func installLaunchAgent() -> Bool {
@@ -45,7 +61,7 @@ enum BackgroundAgentManager {
 
         let plist: [String: Any] = [
             "Label": launchAgentLabel,
-            "ProgramArguments": [executable, "--background"],
+            "ProgramArguments": [executable, "--login"],
             "RunAtLoad": true,
             "KeepAlive": false,
         ]
@@ -69,7 +85,7 @@ enum BackgroundAgentManager {
     }
 
     static func uninstallLaunchAgent() -> Bool {
-        stopBackgroundAgent()
+        _ = runLaunchctl(["bootout", "gui/\(getuid())", launchAgentPlistURL.path])
         try? FileManager.default.removeItem(at: launchAgentPlistURL)
         return true
     }
@@ -86,35 +102,6 @@ enum BackgroundAgentManager {
     private static func reloadLaunchAgent() -> Bool {
         _ = runLaunchctl(["bootout", "gui/\(getuid())", launchAgentPlistURL.path])
         return runLaunchctl(["bootstrap", "gui/\(getuid())", launchAgentPlistURL.path])
-    }
-
-    private static func terminateBackgroundInstances() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        process.arguments = ["-f", "HibernateControl --background"]
-        process.standardOutput = nil
-        process.standardError = nil
-        try? process.run()
-        process.waitUntilExit()
-    }
-
-    @discardableResult
-    private static func runPgrep(arguments: [String]) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return process.terminationStatus == 0 && !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } catch {
-            return false
-        }
     }
 
     @discardableResult

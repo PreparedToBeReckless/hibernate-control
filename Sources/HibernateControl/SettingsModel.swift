@@ -51,7 +51,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func stopBackgroundAgent() {
-        BackgroundAgentManager.stopBackgroundAgent()
+        BackgroundAgentManager.stopApp()
         refreshBackgroundStatus()
     }
 
@@ -61,7 +61,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func refreshBackgroundStatus() {
-        backgroundAgentRunning = BackgroundAgentManager.isBackgroundRunning()
+        backgroundAgentRunning = BackgroundAgentManager.isAppRunning()
     }
 
     func setKeepAwakeOnPowerAdapter(_ enabled: Bool) {

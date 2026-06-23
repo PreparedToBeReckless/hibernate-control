@@ -1,8 +1,7 @@
 import AppKit
 
-let isBackground = CommandLine.arguments.contains("--background")
+let isLoginLaunch = CommandLine.arguments.contains("--login")
 let app = NSApplication.shared
-let delegate = AppDelegate(mode: isBackground ? .background : .settings)
+let delegate = AppDelegate(loginLaunch: isLoginLaunch)
 app.delegate = delegate
-app.setActivationPolicy(isBackground ? .accessory : .regular)
 app.run()
