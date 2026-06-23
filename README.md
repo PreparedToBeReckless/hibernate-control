@@ -94,7 +94,7 @@ build-dmg.sh                Package DMG for distribution
 Wait ~30 seconds after login, or open Settings once and close it. The app re-registers the hotkey on a schedule after login launch.
 
 **Second hibernate only sleeps (not full hibernate)**  
-On AC power, macOS enforces a short cooldown after wake. The countdown popup waits for this automatically. You can cancel and retry later.
+macOS enforces a cooldown after wake before another full hibernate will stick. On battery this is about **2 minutes** (`hibernate user wake`); on AC it is shorter (`acwakelinger`). The countdown popup waits for this automatically — let it finish, or cancel and retry later.
 
 **Privileged helper not installed**  
 Check Settings for the orange/green helper status. First hibernate prompts for your password once to install.

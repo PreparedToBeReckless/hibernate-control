@@ -26,6 +26,19 @@ final class SettingsStore {
         static let keepAwakeOnPowerAdapter = "keepAwakeOnPowerAdapter"
         static let ejectDrivesBeforeHibernate = "ejectDrivesBeforeHibernate"
         static let backgroundServiceActive = "backgroundServiceActive"
+        static let allowTermination = "allowTermination"
+    }
+
+    func setAllowTermination(_ allowed: Bool) {
+        defaults.set(allowed, forKey: Keys.allowTermination)
+    }
+
+    func consumeAllowTermination() -> Bool {
+        let allowed = defaults.bool(forKey: Keys.allowTermination)
+        if allowed {
+            defaults.set(false, forKey: Keys.allowTermination)
+        }
+        return allowed
     }
 
     var hibernateEnabled: Bool {

@@ -1,7 +1,9 @@
 import AppKit
 
 enum StatusBarSupport {
-    static func configure(button: NSStatusBarButton, toolTip: String) {
+    static let toolTip = "Hibernate Control — click to open Settings, right-click for menu"
+
+    static func configure(button: NSStatusBarButton, toolTip: String = toolTip) {
         if let image = NSImage(systemSymbolName: "moon.zzz.fill", accessibilityDescription: "Hibernate Control") {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
             let sized = image.withSymbolConfiguration(config) ?? image

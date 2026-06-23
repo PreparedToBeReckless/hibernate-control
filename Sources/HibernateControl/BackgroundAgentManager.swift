@@ -80,7 +80,16 @@ enum BackgroundAgentManager {
         notifySettingsChanged()
     }
 
+    static func markTerminationAllowed() {
+        SettingsStore.shared.setAllowTermination(true)
+    }
+
+    static func consumeTerminationAllowed() -> Bool {
+        SettingsStore.shared.consumeAllowTermination()
+    }
+
     static func stopApp() {
+        markTerminationAllowed()
         _ = runLaunchctl(["bootout", "gui/\(getuid())", launchAgentPlistURL.path])
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
         for app in NSWorkspace.shared.runningApplications where app.bundleIdentifier == bundleID {

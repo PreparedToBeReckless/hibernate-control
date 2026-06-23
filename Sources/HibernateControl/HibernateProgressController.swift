@@ -11,7 +11,7 @@ final class HibernateProgressController {
     private var onReady: (() -> Void)?
     private var activeGeneration = 0
     private var waitedSeconds = 0
-    private let maxACWaitSeconds = 45
+    private let maxWaitSeconds = 125
 
     private init() {}
 
@@ -55,14 +55,14 @@ final class HibernateProgressController {
         }
 
         waitedSeconds += 1
-        let remaining = max(0, (status.suggestedWaitSeconds ?? maxACWaitSeconds) - waitedSeconds)
-        let reason = status.reason ?? "Waiting for AC power cooldown"
+        let remaining = max(0, (status.suggestedWaitSeconds ?? maxWaitSeconds) - waitedSeconds)
+        let reason = status.reason ?? "Waiting for power cooldown"
         showPanel(
             title: "Preparing hibernate…",
             detail: "\(reason)\nStarting in \(remaining)s"
         )
 
-        if waitedSeconds >= (status.suggestedWaitSeconds ?? maxACWaitSeconds) {
+        if waitedSeconds >= (status.suggestedWaitSeconds ?? maxWaitSeconds) {
             showPanel(title: "Hibernating…", detail: "Starting now")
             complete()
         }
@@ -164,12 +164,31 @@ enum SleepAssertionMonitor {
             return Status(blocked: false, reason: nil, suggestedWaitSeconds: nil)
         }
 
+        if listed.contains("hibernate user wake") {
+            let timeout = parseTimeoutSeconds(from: output, near: "hibernate user wake")
+                ?? parseElapsedRemainingSeconds(from: listed, near: "hibernate user wake", total: 120)
+            return Status(
+                blocked: true,
+                reason: "Waiting for post-hibernate cooldown",
+                suggestedWaitSeconds: min(timeout.map { $0 + 2 } ?? 120, 125)
+            )
+        }
+
         if listed.contains("acwakelinger") {
-            let timeout = parseTimeoutSeconds(from: listed, near: "acwakelinger")
+            let timeout = parseTimeoutSeconds(from: output, near: "acwakelinger")
             return Status(
                 blocked: true,
                 reason: "Waiting for AC power cooldown",
                 suggestedWaitSeconds: min(timeout.map { $0 + 2 } ?? 30, 45)
+            )
+        }
+
+        if listed.contains("darkwakelinger") {
+            let timeout = parseTimeoutSeconds(from: output, near: "darkwakelinger")
+            return Status(
+                blocked: true,
+                reason: "Waiting for sleep cooldown",
+                suggestedWaitSeconds: min(timeout.map { $0 + 2 } ?? 8, 10)
             )
         }
 
@@ -209,5 +228,30 @@ enum SleepAssertionMonitor {
               match.numberOfRanges > 1 else { return nil }
         let valueRange = match.range(at: 1)
         return NumberFormatter().number(from: nsSection.substring(with: valueRange))?.intValue
+    }
+
+    private static func parseElapsedRemainingSeconds(
+        from output: String,
+        near keyword: String,
+        total: Int
+    ) -> Int? {
+        guard let keywordRange = output.range(of: keyword) else { return nil }
+        let prefix = output[..<keywordRange.lowerBound]
+        let pattern = #"\[0x[0-9a-f]+\]\s+(\d\d):(\d\d):(\d\d)\s"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let nsPrefix = String(prefix) as NSString
+        let matches = regex.matches(
+            in: nsPrefix as String,
+            range: NSRange(location: 0, length: nsPrefix.length)
+        )
+        guard let last = matches.last, last.numberOfRanges > 3 else { return nil }
+
+        func component(_ index: Int) -> Int {
+            let range = last.range(at: index)
+            return NumberFormatter().number(from: nsPrefix.substring(with: range))?.intValue ?? 0
+        }
+
+        let elapsed = component(1) * 3600 + component(2) * 60 + component(3)
+        return max(0, total - elapsed)
     }
 }

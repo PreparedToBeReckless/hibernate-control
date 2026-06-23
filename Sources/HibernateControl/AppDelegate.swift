@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let loginLaunch: Bool
 
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
     private var hotKeyManager: HotKeyManager?
     private var settingsWindow: NSWindow?
     private var settingsObserver: NSObjectProtocol?
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var screenUnlockObserver: NSObjectProtocol?
     private var stopServiceObserver: NSObjectProtocol?
     private var startServiceObserver: NSObjectProtocol?
+    private var wakeRewireWorkItem: DispatchWorkItem?
 
     init(loginLaunch: Bool) {
         self.loginLaunch = loginLaunch
@@ -24,7 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if BackgroundAgentManager.isOtherInstanceRunning() {
             BackgroundAgentManager.requestShowSettings()
-            NSApp.terminate(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.terminate(nil)
+            }
             return
         }
 
@@ -84,6 +88,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         false
     }
 
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if BackgroundAgentManager.consumeTerminationAllowed() {
+            return .terminateNow
+        }
+        if BackgroundAgentManager.isBackgroundServiceActive() {
+            hideSettingsWindow()
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         presentSettingsWindow()
         return true
@@ -123,44 +142,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow?.orderOut(nil)
         if BackgroundAgentManager.isBackgroundServiceActive() {
             NSApp.setActivationPolicy(.accessory)
-            scheduleHotKeyReregistration()
         }
+    }
+
+    private func resetSettingsWindow() {
+        settingsWindow?.orderOut(nil)
+        settingsWindow = nil
     }
 
     private func startBackgroundService() {
         if statusItem == nil {
             installStatusItem()
+        } else {
+            rewireStatusItemButton()
         }
         registerHotKey()
-        scheduleHotKeyReregistration()
+        ProcessInfo.processInfo.disableAutomaticTermination("Hibernate Control background service")
+        ProcessInfo.processInfo.disableSuddenTermination()
         NSLog("Hibernate Control: background service started")
     }
 
     private func stopBackgroundService() {
         hotKeyManager?.apply(binding: HotKeyBinding(keyCode: 0, modifierFlags: 0))
+        removeStatusItem()
+        ProcessInfo.processInfo.enableAutomaticTermination("Hibernate Control background service")
+        NSLog("Hibernate Control: background service stopped")
+    }
+
+    private func removeStatusItem() {
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
             self.statusItem = nil
         }
-        NSLog("Hibernate Control: background service stopped")
+        statusMenu = nil
     }
 
-    private func installStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        guard let item = statusItem, let button = item.button else { return }
-        StatusBarSupport.makeVisible(item)
-        StatusBarSupport.configure(
-            button: button,
-            toolTip: "Hibernate Control — click for Open Settings, Hibernate Now, Quit"
-        )
-
+    private func buildStatusMenu() -> NSMenu {
         let menu = NSMenu()
         addMenuAction(menu, title: "Open Settings", action: #selector(openSettings))
         menu.addItem(.separator())
         addMenuAction(menu, title: "Hibernate Now", action: #selector(hibernateNow))
         menu.addItem(.separator())
-        addMenuAction(menu, title: "Quit", action: #selector(quit), keyEquivalent: "q")
-        statusItem?.menu = menu
+        addMenuAction(menu, title: "Quit", action: #selector(quit))
+        return menu
+    }
+
+    private func installStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem?.autosaveName = "com.hibernatecontrol.statusitem"
+        guard statusItem != nil else { return }
+        statusMenu = buildStatusMenu()
+        rewireStatusItemButton()
+    }
+
+    private func rewireStatusItemButton() {
+        guard let item = statusItem else { return }
+        StatusBarSupport.makeVisible(item)
+        guard let button = item.button else { return }
+        if statusMenu == nil {
+            statusMenu = buildStatusMenu()
+        }
+        StatusBarSupport.configure(button: button)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.target = self
+        button.action = #selector(statusBarButtonClicked(_:))
+    }
+
+    @objc private func statusBarButtonClicked(_ sender: NSStatusBarButton) {
+        rewireStatusItemButton()
+
+        if let event = NSApp.currentEvent,
+           event.type == .rightMouseUp || event.modifierFlags.contains(.control),
+           let menu = statusMenu {
+            let location = NSPoint(x: 0, y: sender.bounds.height + 4)
+            menu.popUp(positioning: nil, at: location, in: sender)
+            return
+        }
+        presentSettingsWindow()
     }
 
     private func installAppMenu() {
@@ -210,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func quit() {
+        BackgroundAgentManager.markTerminationAllowed()
         NSApp.terminate(nil)
     }
 
@@ -244,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scheduleHotKeyReregistration()
+            self?.handleSystemWake()
         }
 
         becomeActiveObserver = NotificationCenter.default.addObserver(
@@ -260,18 +319,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scheduleHotKeyReregistration()
+            self?.hotKeyManager?.reregister()
         }
     }
 
-    private func scheduleHotKeyReregistration() {
-        let delays: [TimeInterval] = loginLaunch ? [1, 3, 8, 15, 30] : [0.5, 2]
-        for delay in delays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self else { return }
-                self.hotKeyManager?.reregister()
-            }
+    private func handleSystemWake() {
+        NSLog("Hibernate Control: system wake detected")
+        resetSettingsWindow()
+        guard BackgroundAgentManager.isBackgroundServiceActive() else { return }
+
+        rewireStatusItemButton()
+        hotKeyManager?.reregister()
+
+        wakeRewireWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.rewireStatusItemButton()
+            self.hotKeyManager?.reregister()
         }
+        wakeRewireWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
     private func performHibernateIfEnabled() {

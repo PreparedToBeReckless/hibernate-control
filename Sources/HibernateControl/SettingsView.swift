@@ -116,7 +116,6 @@ struct SettingsView: View {
         .padding(24)
         .frame(width: 480, height: 580)
         .onAppear {
-            BackgroundAgentManager.ensureRunning()
             store.refreshBackgroundStatus()
         }
     }
