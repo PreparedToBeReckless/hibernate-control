@@ -47,6 +47,11 @@ chmod +x "$APP_BUNDLE/Contents/MacOS/HibernateControl"
 cp "$BUILD_DIR/HibernateHelper" "$APP_BUNDLE/Contents/Library/LaunchServices/HibernateHelper"
 chmod +x "$APP_BUNDLE/Contents/Library/LaunchServices/HibernateHelper"
 
+ICON_SOURCE="$SCRIPT_DIR/Resources/AppIcon.icns"
+if [[ -f "$ICON_SOURCE" ]]; then
+    cp "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
+
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -76,6 +81,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Hibernate Control</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 EOF

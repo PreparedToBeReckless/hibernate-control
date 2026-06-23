@@ -1,4 +1,5 @@
 build/
 dist/
 releases/*.dmg
+Resources/icon.iconset/
 .DS_Store
