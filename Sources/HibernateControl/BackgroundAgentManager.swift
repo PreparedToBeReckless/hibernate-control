@@ -4,6 +4,9 @@ import Foundation
 enum BackgroundAgentManager {
     static let settingsChangedNotification = Notification.Name("com.hibernatecontrol.settingsChanged")
     static let showSettingsNotification = Notification.Name("com.hibernatecontrol.showSettings")
+    static let hideSettingsNotification = Notification.Name("com.hibernatecontrol.hideSettings")
+    static let stopBackgroundServiceNotification = Notification.Name("com.hibernatecontrol.stopBackgroundService")
+    static let startBackgroundServiceNotification = Notification.Name("com.hibernatecontrol.startBackgroundService")
 
     private static var launchAgentLabel: String { "com.hibernatecontrol.agent" }
 
@@ -46,6 +49,35 @@ enum BackgroundAgentManager {
             name: showSettingsNotification,
             object: nil
         )
+    }
+
+    static func requestHideSettings() {
+        DistributedNotificationCenter.default().post(
+            name: hideSettingsNotification,
+            object: nil
+        )
+    }
+
+    static func isBackgroundServiceActive() -> Bool {
+        SettingsStore.shared.backgroundServiceActive
+    }
+
+    static func requestStopBackgroundService() {
+        SettingsStore.shared.backgroundServiceActive = false
+        DistributedNotificationCenter.default().post(
+            name: stopBackgroundServiceNotification,
+            object: nil
+        )
+        notifySettingsChanged()
+    }
+
+    static func requestStartBackgroundService() {
+        SettingsStore.shared.backgroundServiceActive = true
+        DistributedNotificationCenter.default().post(
+            name: startBackgroundServiceNotification,
+            object: nil
+        )
+        notifySettingsChanged()
     }
 
     static func stopApp() {

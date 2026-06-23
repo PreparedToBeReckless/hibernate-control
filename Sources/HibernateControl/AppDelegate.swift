@@ -9,6 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var settingsObserver: NSObjectProtocol?
     private var showSettingsObserver: NSObjectProtocol?
+    private var hideSettingsObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
+    private var becomeActiveObserver: NSObjectProtocol?
+    private var screenUnlockObserver: NSObjectProtocol?
+    private var stopServiceObserver: NSObjectProtocol?
+    private var startServiceObserver: NSObjectProtocol?
 
     init(loginLaunch: Bool) {
         self.loginLaunch = loginLaunch
@@ -22,9 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
 
-        installAppMenu(title: "Quit Hibernate Control")
-        installStatusItem()
-        registerHotKey()
+        installAppMenu()
+        if BackgroundAgentManager.isBackgroundServiceActive() {
+            startBackgroundService()
+        }
+        installHotKeyRefreshObservers()
 
         showSettingsObserver = DistributedNotificationCenter.default().addObserver(
             forName: BackgroundAgentManager.showSettingsNotification,
@@ -32,6 +40,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.presentSettingsWindow()
+        }
+
+        hideSettingsObserver = DistributedNotificationCenter.default().addObserver(
+            forName: BackgroundAgentManager.hideSettingsNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.hideSettingsWindow()
+        }
+
+        stopServiceObserver = DistributedNotificationCenter.default().addObserver(
+            forName: BackgroundAgentManager.stopBackgroundServiceNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopBackgroundService()
+        }
+
+        startServiceObserver = DistributedNotificationCenter.default().addObserver(
+            forName: BackgroundAgentManager.startBackgroundServiceNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.startBackgroundService()
         }
 
         let store = SettingsStore.shared
@@ -70,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.orderFrontRegardless()
         NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
+        hotKeyManager?.reregister()
     }
 
     private func createSettingsWindow() {
@@ -77,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.title = "Hibernate Control"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 480, height: 520))
+        window.setContentSize(NSSize(width: 480, height: 580))
         window.center()
         window.isReleasedWhenClosed = false
         window.level = .floating
@@ -88,7 +121,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func hideSettingsWindow() {
         settingsWindow?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        if BackgroundAgentManager.isBackgroundServiceActive() {
+            NSApp.setActivationPolicy(.accessory)
+            scheduleHotKeyReregistration()
+        }
+    }
+
+    private func startBackgroundService() {
+        if statusItem == nil {
+            installStatusItem()
+        }
+        registerHotKey()
+        scheduleHotKeyReregistration()
+        NSLog("Hibernate Control: background service started")
+    }
+
+    private func stopBackgroundService() {
+        hotKeyManager?.apply(binding: HotKeyBinding(keyCode: 0, modifierFlags: 0))
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
+        NSLog("Hibernate Control: background service stopped")
     }
 
     private func installStatusItem() {
@@ -109,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem?.menu = menu
     }
 
-    private func installAppMenu(title: String) {
+    private func installAppMenu() {
         let mainMenu = NSMenu()
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
@@ -119,8 +173,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let settingsItem = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(.separator())
-        let quitItem = appMenu.addItem(withTitle: title, action: #selector(quit), keyEquivalent: "q")
-        quitItem.target = self
+        let hideItem = appMenu.addItem(
+            withTitle: "Hide to Menu Bar",
+            action: #selector(hideToMenuBar),
+            keyEquivalent: "q"
+        )
+        hideItem.target = self
 
         NSApp.mainMenu = mainMenu
     }
@@ -147,6 +205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         performHibernateIfEnabled()
     }
 
+    @objc private func hideToMenuBar() {
+        hideSettingsWindow()
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -164,18 +226,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             hotKeyManager?.apply(binding: HotKeyBinding(keyCode: 0, modifierFlags: 0))
         }
 
-        settingsObserver = DistributedNotificationCenter.default().addObserver(
-            forName: BackgroundAgentManager.settingsChangedNotification,
+        if settingsObserver == nil {
+            settingsObserver = DistributedNotificationCenter.default().addObserver(
+                forName: BackgroundAgentManager.settingsChangedNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.registerHotKey()
+            }
+        }
+    }
+
+    private func installHotKeyRefreshObservers() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        wakeObserver = workspace.addObserver(
+            forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.registerHotKey()
+            self?.scheduleHotKeyReregistration()
+        }
+
+        becomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.hotKeyManager?.reregister()
+        }
+
+        screenUnlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scheduleHotKeyReregistration()
+        }
+    }
+
+    private func scheduleHotKeyReregistration() {
+        let delays: [TimeInterval] = loginLaunch ? [1, 3, 8, 15, 30] : [0.5, 2]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                self.hotKeyManager?.reregister()
+            }
         }
     }
 
     private func performHibernateIfEnabled() {
         let store = SettingsStore.shared
         guard store.hibernateEnabled else { return }
-        HibernateRunner.trigger(restoreAfterWake: store.restoreAfterWake)
+        HibernateRunner.trigger(
+            restoreAfterWake: store.restoreAfterWake,
+            ejectDrives: store.ejectDrivesBeforeHibernate
+        )
     }
 }

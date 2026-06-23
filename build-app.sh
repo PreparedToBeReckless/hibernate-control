@@ -8,16 +8,33 @@ DIST_DIR="$SCRIPT_DIR/dist"
 RELEASES_DIR="$SCRIPT_DIR/releases"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 SOURCES_DIR="$SCRIPT_DIR/Sources/HibernateControl"
+HELPER_SOURCES_DIR="$SCRIPT_DIR/Sources/HibernateHelper"
+SHARED_SOURCES_DIR="$SCRIPT_DIR/Sources/Shared"
 VERSION=$(cat "$SCRIPT_DIR/VERSION")
 
 rm -rf "$BUILD_DIR" "$DIST_DIR"
-mkdir -p "$BUILD_DIR" "$DIST_DIR/$APP_NAME.app/Contents/MacOS" "$DIST_DIR/$APP_NAME.app/Contents/Resources" "$RELEASES_DIR"
+mkdir -p "$BUILD_DIR" \
+  "$DIST_DIR/$APP_NAME.app/Contents/MacOS" \
+  "$DIST_DIR/$APP_NAME.app/Contents/Resources" \
+  "$DIST_DIR/$APP_NAME.app/Contents/Library/LaunchServices" \
+  "$RELEASES_DIR"
 
 SDK=$(xcrun --show-sdk-path)
+TARGET="$(uname -m)-apple-macos13.0"
+
 swiftc -O \
   -sdk "$SDK" \
-  -target "$(uname -m)-apple-macos13.0" \
+  -target "$TARGET" \
+  -o "$BUILD_DIR/HibernateHelper" \
+  "$SHARED_SOURCES_DIR/HibernateHelperProtocol.swift" \
+  "$HELPER_SOURCES_DIR/main.swift" \
+  -framework Foundation
+
+swiftc -O \
+  -sdk "$SDK" \
+  -target "$TARGET" \
   -o "$BUILD_DIR/HibernateControl" \
+  "$SHARED_SOURCES_DIR/HibernateHelperProtocol.swift" \
   "$SOURCES_DIR"/*.swift \
   -framework AppKit \
   -framework Carbon \
@@ -26,6 +43,9 @@ swiftc -O \
 
 cp "$BUILD_DIR/HibernateControl" "$APP_BUNDLE/Contents/MacOS/HibernateControl"
 chmod +x "$APP_BUNDLE/Contents/MacOS/HibernateControl"
+
+cp "$BUILD_DIR/HibernateHelper" "$APP_BUNDLE/Contents/Library/LaunchServices/HibernateHelper"
+chmod +x "$APP_BUNDLE/Contents/Library/LaunchServices/HibernateHelper"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

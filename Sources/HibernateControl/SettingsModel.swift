@@ -11,8 +11,10 @@ final class SettingsModel: ObservableObject {
     @Published var restoreAfterWake: Bool
     @Published var launchAtLogin: Bool
     @Published var keepAwakeOnPowerAdapter: Bool
+    @Published var ejectDrivesBeforeHibernate: Bool
     @Published var hotKeyDisplayString: String
     @Published var backgroundAgentRunning: Bool = false
+    @Published var privilegedHelperReady: Bool = false
 
     private var captureMonitor: Any?
     private var capturePanel: NSPanel?
@@ -22,6 +24,7 @@ final class SettingsModel: ObservableObject {
         restoreAfterWake = store.restoreAfterWake
         launchAtLogin = store.launchAtLogin
         keepAwakeOnPowerAdapter = store.keepAwakeOnPowerAdapter
+        ejectDrivesBeforeHibernate = store.ejectDrivesBeforeHibernate
         hotKeyDisplayString = store.hotKeyDisplayString()
     }
 
@@ -30,6 +33,7 @@ final class SettingsModel: ObservableObject {
         store.restoreAfterWake = restoreAfterWake
         store.launchAtLogin = launchAtLogin
         store.keepAwakeOnPowerAdapter = keepAwakeOnPowerAdapter
+        store.ejectDrivesBeforeHibernate = ejectDrivesBeforeHibernate
         BackgroundAgentManager.ensureRunning()
         BackgroundAgentManager.notifySettingsChanged()
     }
@@ -47,21 +51,34 @@ final class SettingsModel: ObservableObject {
     func hibernateNow() {
         guard hibernateEnabled else { return }
         BackgroundAgentManager.ensureRunning()
-        HibernateRunner.trigger(restoreAfterWake: restoreAfterWake)
+        HibernateRunner.trigger(
+            restoreAfterWake: restoreAfterWake,
+            ejectDrives: ejectDrivesBeforeHibernate
+        )
     }
 
-    func stopBackgroundAgent() {
+    func hideToMenuBar() {
+        BackgroundAgentManager.requestHideSettings()
+        refreshBackgroundStatus()
+    }
+
+    func quitApp() {
         BackgroundAgentManager.stopApp()
+    }
+
+    func stopBackgroundService() {
+        BackgroundAgentManager.requestStopBackgroundService()
         refreshBackgroundStatus()
     }
 
     func restartBackgroundAgent() {
-        BackgroundAgentManager.ensureRunning()
+        BackgroundAgentManager.requestStartBackgroundService()
         refreshBackgroundStatus()
     }
 
     func refreshBackgroundStatus() {
-        backgroundAgentRunning = BackgroundAgentManager.isAppRunning()
+        backgroundAgentRunning = BackgroundAgentManager.isBackgroundServiceActive()
+        privilegedHelperReady = PrivilegedHelperManager.isReady
     }
 
     func setKeepAwakeOnPowerAdapter(_ enabled: Bool) {

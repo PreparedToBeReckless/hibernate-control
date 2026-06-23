@@ -6,12 +6,19 @@ enum PowerSettingsRunner {
 
     static func setKeepAwakeOnPowerAdapter(_ enabled: Bool) {
         DispatchQueue.main.async {
-            runAdminCommand(
-                enabled
-                    ? "/usr/bin/pmset -c sleep 0"
-                    : "/usr/bin/pmset -c sleep 10",
-                label: enabled ? "enable AC keep-awake" : "restore AC sleep timer"
-            )
+            let minutes = enabled ? 0 : 10
+            let label = enabled ? "enable AC keep-awake" : "restore AC sleep timer"
+            PrivilegedHelperManager.setACSleepTimer(minutes: minutes) { success in
+                if success {
+                    appendLog(label: label, command: "/usr/bin/pmset -c sleep \(minutes)", success: true)
+                    return
+                }
+                NSLog("Hibernate Control: helper \(label) failed, falling back to admin prompt")
+                runAdminCommand(
+                    enabled ? "/usr/bin/pmset -c sleep 0" : "/usr/bin/pmset -c sleep 10",
+                    label: label
+                )
+            }
         }
     }
 
@@ -46,6 +53,27 @@ enum PowerSettingsRunner {
         }
     }
 
+    private static func appendLog(label: String, command: String, success: Bool) {
+        do {
+            try FileManager.default.createDirectory(
+                at: logPath.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let status = success ? "ok" : "failed"
+            let entry = "=== \(Date()) \(label) [\(status)] ===\n\(command)\n"
+            if FileManager.default.fileExists(atPath: logPath.path) {
+                let handle = try FileHandle(forWritingTo: logPath)
+                handle.seekToEndOfFile()
+                handle.write(entry.data(using: .utf8) ?? Data())
+                try handle.close()
+            } else {
+                try entry.write(to: logPath, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            NSLog("Hibernate Control: failed to write power log: \(error)")
+        }
+    }
+
     private static func runAdminCommand(_ command: String, label: String) {
         do {
             try FileManager.default.createDirectory(
@@ -53,15 +81,10 @@ enum PowerSettingsRunner {
                 withIntermediateDirectories: true
             )
             let logged = "echo \"=== $(date) \(label) ===\"; \(command) >> '\(logPath.path)' 2>&1"
-            let escaped = logged
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-
-            let appleScriptSource = "do shell script \"\(escaped)\" with administrator privileges"
-            var errorInfo: NSDictionary?
-            NSAppleScript(source: appleScriptSource)?.executeAndReturnError(&errorInfo)
-            if let errorInfo {
-                NSLog("Hibernate Control: \(label) failed: \(errorInfo)")
+            PrivilegedHelperManager.runAdminCommand(logged, label: label) { success in
+                if !success {
+                    NSLog("Hibernate Control: \(label) admin fallback failed")
+                }
             }
         } catch {
             NSLog("Hibernate Control: \(label) setup failed: \(error)")

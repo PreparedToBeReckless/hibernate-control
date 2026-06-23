@@ -7,6 +7,7 @@ final class HotKeyManager {
     private let callback: () -> Void
     private let hotKeyID = EventHotKeyID(signature: OSType(0x4849424E), id: 1) // 'HIBN'
     private var eventHandler: EventHandlerUPP!
+    private var currentBinding = HotKeyBinding(keyCode: 0, modifierFlags: 0)
 
     init(callback: @escaping () -> Void) {
         self.callback = callback
@@ -46,14 +47,19 @@ final class HotKeyManager {
     }
 
     func apply(binding: HotKeyBinding) {
-        unregister()
-        guard binding.keyCode != 0 else { return }
+        currentBinding = binding
+        reregister()
+    }
 
-        let flags = NSEvent.ModifierFlags(rawValue: binding.modifierFlags)
+    func reregister() {
+        unregister()
+        guard currentBinding.keyCode != 0 else { return }
+
+        let flags = NSEvent.ModifierFlags(rawValue: currentBinding.modifierFlags)
         let modifiers = HotKeyFormatter.carbonModifiers(from: flags)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(
-            UInt32(binding.keyCode),
+            UInt32(currentBinding.keyCode),
             modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
@@ -63,11 +69,11 @@ final class HotKeyManager {
         if status == noErr {
             hotKeyRef = ref
             NSLog(
-                "Hibernate Control: registered hotkey key=\(binding.keyCode) modifiers=\(modifiers) (\(HotKeyFormatter.displayString(for: binding)))"
+                "Hibernate Control: registered hotkey key=\(currentBinding.keyCode) modifiers=\(modifiers) (\(HotKeyFormatter.displayString(for: currentBinding)))"
             )
         } else {
             NSLog(
-                "Hibernate Control: failed to register hotkey key=\(binding.keyCode) modifiers=\(modifiers) status=\(status)"
+                "Hibernate Control: failed to register hotkey key=\(currentBinding.keyCode) modifiers=\(modifiers) status=\(status)"
             )
         }
     }

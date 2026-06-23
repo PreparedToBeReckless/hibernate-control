@@ -24,6 +24,8 @@ final class SettingsStore {
         static let launchAtLogin = "launchAtLogin"
         static let hotKeyData = "hotKeyData"
         static let keepAwakeOnPowerAdapter = "keepAwakeOnPowerAdapter"
+        static let ejectDrivesBeforeHibernate = "ejectDrivesBeforeHibernate"
+        static let backgroundServiceActive = "backgroundServiceActive"
     }
 
     var hibernateEnabled: Bool {
@@ -68,6 +70,19 @@ final class SettingsStore {
     var keepAwakeOnPowerAdapter: Bool {
         get { defaults.bool(forKey: Keys.keepAwakeOnPowerAdapter) }
         set { defaults.set(newValue, forKey: Keys.keepAwakeOnPowerAdapter) }
+    }
+
+    var ejectDrivesBeforeHibernate: Bool {
+        get { defaults.bool(forKey: Keys.ejectDrivesBeforeHibernate) }
+        set { defaults.set(newValue, forKey: Keys.ejectDrivesBeforeHibernate) }
+    }
+
+    var backgroundServiceActive: Bool {
+        get {
+            if defaults.object(forKey: Keys.backgroundServiceActive) == nil { return true }
+            return defaults.bool(forKey: Keys.backgroundServiceActive)
+        }
+        set { defaults.set(newValue, forKey: Keys.backgroundServiceActive) }
     }
 
     func hotKeyDisplayString() -> String {
