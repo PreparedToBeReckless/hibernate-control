@@ -16,7 +16,7 @@ struct HotKeyBinding: Codable, Equatable {
 final class SettingsStore {
     static let shared = SettingsStore()
 
-    private let defaults = UserDefaults(suiteName: "com.hibernatecontrol.app") ?? .standard
+    private let defaults = UserDefaults(suiteName: "com.hibernatecontrol.settings") ?? .standard
 
     private enum Keys {
         static let hibernateEnabled = "hibernateEnabled"

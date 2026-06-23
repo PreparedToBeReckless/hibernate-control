@@ -48,10 +48,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSLog("Hibernate Control: started (pid \(ProcessInfo.processInfo.processIdentifier), login=\(loginLaunch))")
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) {
-        presentSettingsWindow()
-    }
-
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -85,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center()
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .moveToActiveSpace]
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
         settingsWindow = window
     }
@@ -120,7 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
-        appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
         appMenu.addItem(.separator())
         let quitItem = appMenu.addItem(withTitle: title, action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
